@@ -15,6 +15,7 @@ var TWITTER_USER_ID = 'TWITTER_USER_ID';
 // For debugging.
 var USE_SINCE_ID = true;
 var SEND_ONLY_LATEST = false;
+var DRY_RUN = false;
 
 function main() {
   Logger.log('hello');
@@ -28,7 +29,7 @@ function main() {
 
   var options = {
     multi: true,
-    count: 5
+    count: 15
   };
 
   var last_tweet_id = parseInt(getProperty(TWITTER_LAST_TWEET_ID));
@@ -84,6 +85,10 @@ function setProperty(key, value) {
 }
 
 function notify(tweet, oauth) {
+  if (DRY_RUN) {
+    Logger.log('DRY_RUN: ' + buildTweetURL(tweet));
+    return;
+  }
   // sendTwitterDM(tweet, oauth);
   notifySlack(tweet, SLACK_WEBHOOK_URL);
 }
