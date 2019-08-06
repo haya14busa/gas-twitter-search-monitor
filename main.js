@@ -1,14 +1,20 @@
 // Dependencies: https://github.com/airhadoken/twitter-lib
 
-var TWITTER_SEARCH_QUERY = 'TWITTER_SEARCH_QUERY';
+// Set below constants in script properties.
+var TWITTER_SEARCH_QUERY = getProperty('TWITTER_SEARCH_QUERY');
+var SLACK_WEBHOOK_URL = getProperty('SLACK_WEBHOOK_URL');
+// TWITTER_CONSUMER_KEY
+// TWITTER_CONSUMER_SECRET
+// TWITTER_ACCESS_TOKEN
+// TWITTER_ACCESS_SECRET
 
 // Internal script constants.
 var TWITTER_LAST_TWEET_ID = 'TWITTER_LAST_TWEET_ID';
 var TWITTER_USER_ID = 'TWITTER_USER_ID';
 
 // For debugging.
-var USE_SINCE_ID = false;
-var SEND_ONLY_LATEST = true;
+var USE_SINCE_ID = true;
+var SEND_ONLY_LATEST = false;
 
 function main() {
   Logger.log('hello');
@@ -16,8 +22,7 @@ function main() {
   var oauth = new Twitterlib.OAuth(PropertiesService.getScriptProperties());
   oauth.checkAccess();
 
-  var query = getProperty(TWITTER_SEARCH_QUERY);
-  if (!query) {
+  if (!TWITTER_SEARCH_QUERY) {
     throw 'TWITTER_SEARCH_QUERY is empty.'
   }
 
@@ -30,9 +35,10 @@ function main() {
   if (last_tweet_id && USE_SINCE_ID) {
     options.since_id = last_tweet_id;
   }
-  var tweets = oauth.fetchTweets(query, /*tweet_processor*/null , options);
+  var tweets = oauth.fetchTweets(TWITTER_SEARCH_QUERY, /*tweet_processor*/null , options);
   for (var i = 0; i < tweets.length; i++) {
     var t = tweets[i];
+    // Logger.log(JSON.stringify(t));
     if (i === 0) {
       var id = t.id;
       if (id === last_tweet_id && USE_SINCE_ID) {
@@ -41,13 +47,16 @@ function main() {
       }
       setProperty(TWITTER_LAST_TWEET_ID, id.toString());
     }
-    var url = 'https://twitter.com/' + t.user.screen_name + '/status/' + t.id_str;
-    var user_id = getCachedUserId(oauth);
-    oauth.send_direct_message(user_id, url);
+    notify(t, oauth);
     if (SEND_ONLY_LATEST) {
       break;
     }
+    wait();
   }
+}
+
+function buildTweetURL(tweet) {
+  return 'https://twitter.com/' + tweet.user.screen_name + '/status/' + tweet.id_str;
 }
 
 function authCallback(request) {
@@ -72,6 +81,34 @@ function getProperty(key) {
 
 function setProperty(key, value) {
   return PropertiesService.getScriptProperties().setProperty(key, value);
+}
+
+function notify(tweet, oauth) {
+  // sendTwitterDM(tweet, oauth);
+  notifySlack(tweet, SLACK_WEBHOOK_URL);
+}
+
+function notifySlack(tweet, webhook) {
+  var text = buildTweetURL(tweet);
+  if (tweet.user.following) {
+    text = '<!channel> ' + text;
+  }
+  var data = {
+    'text': text,
+    'unfurl_links': true,
+  };
+  var options = {
+    'method' : 'post',
+    'contentType': 'application/json',
+    'payload' : JSON.stringify(data)
+  };
+  UrlFetchApp.fetch(webhook, options);
+}
+
+function sendTwitterDM(tweet, oauth) {
+  var tweet_url = buildTweetURL(tweet);
+  var user_id = getCachedUserId(oauth);
+  oauth.send_direct_message(user_id, tweet_url);
 }
 
 // https://developer.twitter.com/en/docs/direct-messages/sending-and-receiving/api-reference/new-event
@@ -131,5 +168,9 @@ Twitterlib.OAuth.prototype.verify_credential = function() {
     Logger.log("verify_credential failed. Error was:\n" + JSON.stringify(e) + "\n\noptions were:\n" + JSON.stringify(options) + "\n\n");
     return false;
   }
+}
 
+// wait waits for short time to avoid API limit.
+function wait() {
+  Utilities.sleep(500);
 }
